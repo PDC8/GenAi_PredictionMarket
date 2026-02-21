@@ -1,0 +1,32 @@
+Product: Agentic Prediction Markets Terminal (Demo MVP)
+
+Objective
+- Demonstrate an end-to-end forecasting workflow with auditable orchestration, simulated execution,
+  and feedback-driven trust updates.
+
+Core components
+1) Knowledge Engine
+- Pull live Kalshi market snapshots (with seeded fallback).
+- Maintain trust-weighted signal store and source attribution.
+
+2) Orchestration Layer
+- Plan/reason over market context.
+- Run deterministic probability engine; optionally blend LLM output.
+- Produce confidence, opportunity signal, recommendation, and position sizing.
+- Persist step logs + input snapshot for auditability.
+
+3) Feedback Loop
+- On market resolution, compare prediction vs outcome.
+- Emit correction report and update source trust weights.
+- Reuse updated trust in subsequent runs.
+
+MVP constraints
+- Single-user local deployment.
+- Kalshi read-only integration.
+- No real trading; simulation only.
+- No auth, no marketplace subscriptions, no private data connectors.
+
+Key success metrics
+- TTFP (Time-to-First-Prediction)
+- Agent Unit Economics (net alpha minus compute/API cost proxy)
+- Demo TCO delta estimate
