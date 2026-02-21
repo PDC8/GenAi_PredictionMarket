@@ -43,6 +43,69 @@ export async function createAgent(input: {
   return row;
 }
 
+export async function updateAgentById(input: {
+  agentId: string;
+  name: string;
+  domain: string;
+  riskProfile: "conservative" | "balanced" | "aggressive";
+  promptTemplate: string;
+}): Promise<AgentProfile | null> {
+  await initializeDatabase();
+
+  const foundAgent = await db.select({ id: agents.id }).from(agents).where(eq(agents.id, input.agentId)).limit(1);
+  if (foundAgent.length === 0) {
+    return null;
+  }
+
+  await db
+    .update(agents)
+    .set({
+      name: input.name,
+      domain: input.domain,
+      riskProfile: input.riskProfile,
+      promptTemplate: input.promptTemplate
+    })
+    .where(eq(agents.id, input.agentId));
+
+  const updatedRows = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
+  const updatedAgent = updatedRows[0];
+  if (!updatedAgent) {
+    return null;
+  }
+
+  return {
+    ...updatedAgent,
+    riskProfile:
+      updatedAgent.riskProfile === "conservative" || updatedAgent.riskProfile === "aggressive"
+        ? updatedAgent.riskProfile
+        : "balanced"
+  };
+}
+
+export async function deleteAgentById(
+  agentId: string
+): Promise<{ status: "deleted" | "not_found" | "in_use" }> {
+  await initializeDatabase();
+
+  const foundAgent = await db.select({ id: agents.id }).from(agents).where(eq(agents.id, agentId)).limit(1);
+  if (foundAgent.length === 0) {
+    return { status: "not_found" };
+  }
+
+  const linkedRun = await db
+    .select({ id: predictionRuns.id })
+    .from(predictionRuns)
+    .where(eq(predictionRuns.agentId, agentId))
+    .limit(1);
+
+  if (linkedRun.length > 0) {
+    return { status: "in_use" };
+  }
+
+  await db.delete(agents).where(eq(agents.id, agentId));
+  return { status: "deleted" };
+}
+
 export async function listMarketCards(params?: {
   status?: MarketStatus;
   limit?: number;

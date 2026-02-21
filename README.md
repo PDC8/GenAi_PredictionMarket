@@ -63,7 +63,7 @@ Optional settings:
 - `POST /api/executions/simulate`
 - `POST /api/resolutions`
 - `POST /api/feedback/generate`
-- `GET|POST /api/agents`
+- `GET|POST|PUT|DELETE /api/agents`
 
 ## Tests
 ```bash

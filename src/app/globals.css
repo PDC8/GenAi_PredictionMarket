@@ -157,6 +157,23 @@ a {
   padding: 10px;
 }
 
+.item-clickable {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+
+.item-clickable:hover {
+  border-color: rgba(46, 197, 255, 0.45);
+  transform: translateY(-1px);
+}
+
+.item-clickable:focus-visible {
+  outline: 2px solid rgba(46, 197, 255, 0.65);
+  outline-offset: 2px;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -183,6 +200,11 @@ button {
 button[disabled] {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.button-danger {
+  border-color: rgba(255, 107, 99, 0.5);
+  background: linear-gradient(120deg, rgba(255, 107, 99, 0.26), rgba(255, 107, 99, 0.1));
 }
 
 table {
