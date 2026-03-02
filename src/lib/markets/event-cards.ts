@@ -143,7 +143,7 @@ export function buildMarketPulseEventCards(markets: MarketCard[]): MarketPulseEv
     .sort((a, b) => b.volume - a.volume)
     .map((market) => toFallbackEvent(market));
 
-  return [...paired.sort((a, b) => b.volume - a.volume), ...unpaired];
+  return [...paired, ...unpaired].sort((a, b) => b.volume - a.volume);
 }
 
 export function formatMarketOdds(pricePct: number): string {

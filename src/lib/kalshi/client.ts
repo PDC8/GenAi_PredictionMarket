@@ -40,10 +40,10 @@ function normalizeBase(raw: string): string {
 function buildCandidateBases(): string[] {
   const fromEnv = process.env.KALSHI_BASE_URL?.trim();
   const defaults = [
-    "https://demo-api.kalshi.co/trade-api/v2",
     "https://api.elections.kalshi.com/trade-api/v2",
     "https://api.elections.kalshi.com",
-    "https://trading-api.kalshi.com/trade-api/v2"
+    "https://trading-api.kalshi.com/trade-api/v2",
+    "https://demo-api.kalshi.co/trade-api/v2"
   ].map(normalizeBase);
 
   const candidates = fromEnv ? [normalizeBase(fromEnv), ...defaults] : defaults;
@@ -430,45 +430,18 @@ function extractNextCursor(payload: unknown): string | null {
 }
 
 function buildKalshiUrls(base: string, limit: number): string[] {
-  const events = new URL(`${base}/events/multivariate`);
-  events.searchParams.set("status", "open");
-  events.searchParams.set("limit", String(limit));
-
-  const eventsFallback = new URL(`${base}/events/multivariate`);
-  eventsFallback.searchParams.set("limit", String(limit));
-
-  const eventsSimple = new URL(`${base}/events`);
-  eventsSimple.searchParams.set("status", "open");
-  eventsSimple.searchParams.set("limit", String(limit));
-
-  const eventsSimpleFallback = new URL(`${base}/events`);
-  eventsSimpleFallback.searchParams.set("limit", String(limit));
-
+  // The /events endpoint returns metadata-only objects (no price or volume fields)
+  // and is not useful for market syncing. Use /markets endpoints only.
   const primary = new URL(`${base}/markets`);
   primary.searchParams.set("status", "open");
   primary.searchParams.set("limit", String(limit));
   primary.searchParams.set("mve_filter", "exclude");
 
-  const multivariate = new URL(`${base}/markets`);
-  multivariate.searchParams.set("status", "open");
-  multivariate.searchParams.set("limit", String(limit));
-  multivariate.searchParams.set("mve_filter", "only");
-
   const fallback = new URL(`${base}/markets`);
   fallback.searchParams.set("status", "open");
   fallback.searchParams.set("limit", String(limit));
 
-  return [
-    ...new Set([
-      events.toString(),
-      eventsFallback.toString(),
-      eventsSimple.toString(),
-      eventsSimpleFallback.toString(),
-      primary.toString(),
-      multivariate.toString(),
-      fallback.toString()
-    ])
-  ];
+  return [...new Set([primary.toString(), fallback.toString()])];
 }
 
 function isMultiLegMarket(input: {

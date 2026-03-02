@@ -1,10 +1,10 @@
 const major = Number.parseInt(process.versions.node.split('.')[0], 10);
-const supportedMajor = 22;
+const minMajor = 22;
 
-if (major !== supportedMajor) {
+if (major < minMajor) {
   console.error(
-    `[dev setup] Node ${process.versions.node} detected. Use Node ${supportedMajor}.x for stable Next.js dev runtime.\n` +
-      `Run: nvm use ${supportedMajor}`
+    `[dev setup] Node ${process.versions.node} detected. Node ${minMajor}+ is required.\n` +
+      `Run: nvm use ${minMajor}`
   );
   process.exit(1);
 }
