@@ -1,23 +1,31 @@
 import Link from "next/link";
 
-import { ActiveOrchestration } from "@/components/ActiveOrchestration";
+import { AgentLiveFeed } from "@/components/AgentLiveFeed";
 import { AgentRoster } from "@/components/AgentRoster";
+import { AllTimePnlChart } from "@/components/AllTimePnlChart";
 import { MarketPulse } from "@/components/MarketPulse";
-import { getDailyMetric, listAgents, listMarketCards } from "@/lib/db/repository";
+import {
+  getAllTimePnlSummary,
+  getDailyMetric,
+  listAgentRuntimeSummaries,
+  listAgents,
+  listMarketCards
+} from "@/lib/db/repository";
 import { epochDaysKey } from "@/lib/db/utils";
 import { listRecentPredictionRuns } from "@/lib/orchestrator/pipeline";
 
 export const dynamic = "force-dynamic";
+const MIN_MARKET_VOLUME_USD = 0;
 
 export default async function HomePage() {
-  const [agents, markets, runs, metric] = await Promise.all([
+  const [agents, agentRuntime, markets, runs, metric, pnlSummary] = await Promise.all([
     listAgents(),
-    listMarketCards({ status: "open", limit: 50 }),
-    listRecentPredictionRuns(1),
-    getDailyMetric(epochDaysKey(Date.now()))
+    listAgentRuntimeSummaries(),
+    listMarketCards({ status: "open", limit: 500 }),
+    listRecentPredictionRuns(40),
+    getDailyMetric(epochDaysKey(Date.now())),
+    getAllTimePnlSummary()
   ]);
-
-  const latestRun = runs[0] ?? null;
 
   return (
     <main className="page-shell stack">
@@ -30,27 +38,39 @@ export default async function HomePage() {
       </div>
 
       <div className="row panel">
-        <div>
-          <div className="small">Today&apos;s Metrics</div>
-          <div>
-            TTFP: <strong>{metric ? `${metric.ttfpSeconds.toFixed(0)}s` : "n/a"}</strong>
+        <div className="top-metrics-grid">
+          <div className="metrics-panel">
+            <div className="small">Today&apos;s Metrics</div>
+            <div>
+              TTFP: <strong>{metric ? `${metric.ttfpSeconds.toFixed(0)}s` : "n/a"}</strong>
+            </div>
+            <div>
+              Unit Economics: <strong>${metric ? metric.unitEconomicsNetAlphaUsd.toFixed(2) : "0.00"}</strong>
+            </div>
+            <div>
+              TCO Delta: <strong>${metric ? metric.tcoDeltaEstimateUsd.toFixed(0) : "1200"}</strong>
+            </div>
           </div>
-          <div>
-            Unit Economics: <strong>${metric ? metric.unitEconomicsNetAlphaUsd.toFixed(2) : "0.00"}</strong>
-          </div>
-          <div>
-            TCO Delta: <strong>${metric ? metric.tcoDeltaEstimateUsd.toFixed(0) : "1200"}</strong>
+
+          <AllTimePnlChart
+            title="Profit &amp; Loss"
+            executions={pnlSummary.executions}
+          />
+
+          <div className="top-metrics-action">
+            <Link href="/markets" className="badge">
+              Open Market Explorer
+            </Link>
           </div>
         </div>
-        <Link href="/markets" className="badge">
-          Open Market Explorer
-        </Link>
       </div>
 
-      <div className="grid-3 dashboard-grid">
-        <AgentRoster agents={agents} />
-        <ActiveOrchestration latestRun={latestRun} />
-        <MarketPulse markets={markets} />
+      <div className="dashboard-stack">
+        <AgentRoster agents={agents} runtime={agentRuntime} />
+        <div className="grid-2 dashboard-grid dashboard-grid-secondary">
+          <AgentLiveFeed agents={agents} runs={runs} />
+          <MarketPulse markets={markets} minVolumeUsd={MIN_MARKET_VOLUME_USD} />
+        </div>
       </div>
     </main>
   );

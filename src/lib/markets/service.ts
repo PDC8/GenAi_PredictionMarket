@@ -3,9 +3,10 @@ import { seedMarkets } from "@/lib/db/seed";
 import { fetchKalshiMarkets } from "@/lib/kalshi/client";
 import { upsertMarkets } from "@/lib/db/repository";
 
-export async function syncMarketsFromKalshi(limit = 50): Promise<{
+export async function syncMarketsFromKalshi(limit = 200): Promise<{
   synced: number;
   source: "kalshi" | "seed_fallback";
+  error?: string;
 }> {
   try {
     const snapshots = await fetchKalshiMarkets(limit);
@@ -32,7 +33,8 @@ export async function syncMarketsFromKalshi(limit = 50): Promise<{
     );
 
     return { synced: snapshots.length, source: "kalshi" };
-  } catch {
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
     const now = Date.now();
     await upsertMarkets(
       seedMarkets.map((market) => ({
@@ -43,6 +45,6 @@ export async function syncMarketsFromKalshi(limit = 50): Promise<{
       }))
     );
 
-    return { synced: seedMarkets.length, source: "seed_fallback" };
+    return { synced: seedMarkets.length, source: "seed_fallback", error: reason };
   }
 }

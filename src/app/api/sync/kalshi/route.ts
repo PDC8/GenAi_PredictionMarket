@@ -6,7 +6,7 @@ import { syncMarketsFromKalshi } from "@/lib/markets/service";
 export const dynamic = "force-dynamic";
 
 const SyncSchema = z.object({
-  limit: z.number().int().min(1).max(200).optional()
+  limit: z.number().int().min(1).max(500).optional()
 });
 
 export async function POST(request: Request) {
@@ -18,6 +18,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: payload.error.issues }, { status: 400 });
   }
 
-  const result = await syncMarketsFromKalshi(payload.data.limit ?? 50);
+  const result = await syncMarketsFromKalshi(payload.data.limit ?? 200);
   return NextResponse.json(result);
 }

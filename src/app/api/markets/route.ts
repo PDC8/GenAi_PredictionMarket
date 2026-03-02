@@ -7,14 +7,16 @@ export const dynamic = "force-dynamic";
 
 const querySchema = z.object({
   status: z.enum(["open", "closed", "resolved"]).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional()
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  minVolume: z.coerce.number().min(0).optional()
 });
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const payload = querySchema.safeParse({
     status: url.searchParams.get("status") ?? undefined,
-    limit: url.searchParams.get("limit") ?? undefined
+    limit: url.searchParams.get("limit") ?? undefined,
+    minVolume: url.searchParams.get("minVolume") ?? undefined
   });
 
   if (!payload.success) {

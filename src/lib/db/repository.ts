@@ -1,10 +1,18 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 
-import type { AgentProfile, FeedbackCorrection, MarketCard, MarketStatus, YesNo } from "@/types/domain";
+import type {
+  AgentProfile,
+  AgentRuntimeSummary,
+  FeedbackCorrection,
+  MarketCard,
+  MarketStatus,
+  YesNo
+} from "@/types/domain";
 import { initializeDatabase } from "./init";
-import { createId } from "./utils";
+import { createId, round } from "./utils";
 import { db } from "./client";
 import {
+  agentRuntime,
   agents,
   executions,
   feedbackCorrections,
@@ -25,6 +33,164 @@ export async function listAgents(): Promise<AgentProfile[]> {
         ? row.riskProfile
         : "balanced"
   }));
+}
+
+function deriveAgentStatus(manualStatus: "live" | "paused", lastPredictionAt: number | null): AgentRuntimeSummary["status"] {
+  if (manualStatus === "paused") {
+    return "PAUSED";
+  }
+  return lastPredictionAt === null ? "PENDING" : "LIVE";
+}
+
+export async function listAgentRuntimeSummaries(agentIds?: string[]): Promise<AgentRuntimeSummary[]> {
+  await initializeDatabase();
+
+  const targetAgents =
+    agentIds && agentIds.length > 0
+      ? await db.select({ id: agents.id }).from(agents).where(inArray(agents.id, agentIds))
+      : await db.select({ id: agents.id }).from(agents);
+
+  const ids = targetAgents.map((row) => row.id);
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const runtimeRows = await db.select().from(agentRuntime).where(inArray(agentRuntime.agentId, ids));
+  const runtimeByAgentId = new Map(runtimeRows.map((row) => [row.agentId, row]));
+
+  const runRows = await db
+    .select({
+      id: predictionRuns.id,
+      agentId: predictionRuns.agentId,
+      createdAt: predictionRuns.createdAt
+    })
+    .from(predictionRuns)
+    .where(inArray(predictionRuns.agentId, ids));
+
+  const now = Date.now();
+  const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+  const perAgent = new Map<
+    string,
+    {
+      lastPredictionAt: number | null;
+      predictions30d: number;
+      closedExecutions: number;
+      winningExecutions: number;
+      netAlpha: number;
+    }
+  >();
+  for (const agentId of ids) {
+    perAgent.set(agentId, {
+      lastPredictionAt: null,
+      predictions30d: 0,
+      closedExecutions: 0,
+      winningExecutions: 0,
+      netAlpha: 0
+    });
+  }
+
+  const runIdToAgentId = new Map<string, string>();
+  for (const run of runRows) {
+    runIdToAgentId.set(run.id, run.agentId);
+    const stats = perAgent.get(run.agentId);
+    if (!stats) {
+      continue;
+    }
+    if (stats.lastPredictionAt === null || run.createdAt > stats.lastPredictionAt) {
+      stats.lastPredictionAt = run.createdAt;
+    }
+    if (run.createdAt >= thirtyDaysAgo) {
+      stats.predictions30d += 1;
+    }
+  }
+
+  const runIds = [...runIdToAgentId.keys()];
+  if (runIds.length > 0) {
+    const closedExecutions = await db
+      .select({
+        predictionRunId: executions.predictionRunId,
+        pnlUsd: executions.pnlUsd
+      })
+      .from(executions)
+      .where(and(eq(executions.status, "CLOSED"), inArray(executions.predictionRunId, runIds)));
+
+    for (const execution of closedExecutions) {
+      const agentId = runIdToAgentId.get(execution.predictionRunId);
+      if (!agentId) {
+        continue;
+      }
+      const stats = perAgent.get(agentId);
+      if (!stats) {
+        continue;
+      }
+      stats.closedExecutions += 1;
+      if (execution.pnlUsd > 0) {
+        stats.winningExecutions += 1;
+      }
+      stats.netAlpha = round(stats.netAlpha + execution.pnlUsd, 4);
+    }
+  }
+
+  return ids.map((agentId) => {
+    const runtime = runtimeByAgentId.get(agentId);
+    const manualStatus: "live" | "paused" = runtime?.manualStatus === "paused" ? "paused" : "live";
+    const stats = perAgent.get(agentId) ?? {
+      lastPredictionAt: null,
+      predictions30d: 0,
+      closedExecutions: 0,
+      winningExecutions: 0,
+      netAlpha: 0
+    };
+
+    const winRate =
+      stats.closedExecutions > 0 ? round((stats.winningExecutions / stats.closedExecutions) * 100, 1) : null;
+
+    return {
+      agentId,
+      manualStatus,
+      status: deriveAgentStatus(manualStatus, stats.lastPredictionAt),
+      winRate,
+      netAlpha: stats.closedExecutions > 0 ? stats.netAlpha : null,
+      lastPredictionAt: stats.lastPredictionAt,
+      predictions30d: stats.predictions30d
+    };
+  });
+}
+
+export async function getAgentRuntimeSummary(agentId: string): Promise<AgentRuntimeSummary | null> {
+  const rows = await listAgentRuntimeSummaries([agentId]);
+  return rows[0] ?? null;
+}
+
+export async function setAgentManualStatus(input: {
+  agentId: string;
+  manualStatus: "live" | "paused";
+}): Promise<{ status: "updated" | "not_found" }> {
+  await initializeDatabase();
+
+  const foundAgent = await db.select({ id: agents.id }).from(agents).where(eq(agents.id, input.agentId)).limit(1);
+  if (foundAgent.length === 0) {
+    return { status: "not_found" };
+  }
+
+  const now = Date.now();
+  await db
+    .insert(agentRuntime)
+    .values({
+      agentId: input.agentId,
+      manualStatus: input.manualStatus,
+      statusUpdatedAt: now
+    })
+    .onConflictDoUpdate({
+      target: agentRuntime.agentId,
+      set: {
+        manualStatus: input.manualStatus,
+        statusUpdatedAt: now
+      }
+    });
+
+  return { status: "updated" };
 }
 
 export async function createAgent(input: {
@@ -106,22 +272,59 @@ export async function deleteAgentById(
   return { status: "deleted" };
 }
 
+function looksLikeMultiLegMarket(input: {
+  externalId: string;
+  title: string;
+  category: string;
+}): boolean {
+  const structural = `${input.externalId} ${input.category}`.toUpperCase();
+  if (/(CROSSCATEGORY|MULTIGAME|PARLAY|SAMEGAME|SGP)/.test(structural)) {
+    return true;
+  }
+
+  const yesNoHits = (input.title.match(/\b(yes|no)\b/gi) ?? []).length;
+  return input.title.includes(",") && yesNoHits >= 2;
+}
+
 export async function listMarketCards(params?: {
   status?: MarketStatus;
   limit?: number;
+  minVolume?: number;
 }): Promise<MarketCard[]> {
   await initializeDatabase();
   const status = params?.status;
   const limit = params?.limit ?? 50;
+  const minVolume = params?.minVolume;
 
-  const marketRows = status
-    ? await db
-        .select()
-        .from(markets)
-        .where(eq(markets.status, status))
-        .orderBy(desc(markets.volume))
-        .limit(limit)
-    : await db.select().from(markets).orderBy(desc(markets.volume)).limit(limit);
+  let marketRows: Array<typeof markets.$inferSelect>;
+  if (status && minVolume !== undefined) {
+    marketRows = await db
+      .select()
+      .from(markets)
+      .where(and(eq(markets.status, status), gt(markets.volume, minVolume)))
+      .orderBy(desc(markets.volume))
+      .limit(limit);
+  } else if (status) {
+    marketRows = await db
+      .select()
+      .from(markets)
+      .where(eq(markets.status, status))
+      .orderBy(desc(markets.volume))
+      .limit(limit);
+  } else if (minVolume !== undefined) {
+    marketRows = await db.select().from(markets).where(gt(markets.volume, minVolume)).orderBy(desc(markets.volume)).limit(limit);
+  } else {
+    marketRows = await db.select().from(markets).orderBy(desc(markets.volume)).limit(limit);
+  }
+
+  const filteredRows = marketRows.filter(
+    (market) =>
+      !looksLikeMultiLegMarket({
+        externalId: market.externalId,
+        title: market.title,
+        category: market.category
+      })
+  );
 
   const runs = await db.select().from(predictionRuns).orderBy(desc(predictionRuns.createdAt));
 
@@ -132,17 +335,18 @@ export async function listMarketCards(params?: {
     }
   }
 
-  return marketRows.map((market) => {
+  return filteredRows.map((market) => {
     const run = latestByMarket.get(market.id);
     return {
       id: market.id,
+      externalId: market.externalId,
       title: market.title,
       category: market.category,
       yesPrice: market.yesPrice,
       noPrice: market.noPrice,
       volume: market.volume,
       status: market.status as MarketStatus,
-      opportunitySignal: run?.opportunitySignal ?? Math.abs(market.yesPrice / 100 - 0.5),
+      opportunitySignal: run?.opportunitySignal ?? null,
       confidence: run?.confidence ?? null,
       source: market.source as "kalshi" | "seed_fallback",
       updatedAt: market.lastSyncedAt
@@ -429,4 +633,50 @@ export async function getExecutionCostAndPnlForDate(date: string): Promise<{
   const pnl = closedExecutions.reduce((sum, row) => sum + row.pnlUsd, 0);
 
   return { pnl, estCosts };
+}
+
+export async function getAllTimePnlSummary(): Promise<{
+  totalPnlUsd: number;
+  closedExecutions: number;
+  winningExecutions: number;
+  losingExecutions: number;
+  points: Array<{ timestamp: number; cumulativePnlUsd: number }>;
+  executions: Array<{ timestamp: number; pnlUsd: number }>;
+}> {
+  await initializeDatabase();
+
+  const closed = await db
+    .select({
+      createdAt: executions.createdAt,
+      pnlUsd: executions.pnlUsd
+    })
+    .from(executions)
+    .where(eq(executions.status, "CLOSED"))
+    .orderBy(executions.createdAt);
+
+  let cumulative = 0;
+  let wins = 0;
+  let losses = 0;
+
+  const points = closed.map((row) => {
+    cumulative = round(cumulative + row.pnlUsd, 4);
+    if (row.pnlUsd > 0) {
+      wins += 1;
+    } else if (row.pnlUsd < 0) {
+      losses += 1;
+    }
+    return {
+      timestamp: row.createdAt,
+      cumulativePnlUsd: cumulative
+    };
+  });
+
+  return {
+    totalPnlUsd: round(cumulative, 4),
+    closedExecutions: closed.length,
+    winningExecutions: wins,
+    losingExecutions: losses,
+    points,
+    executions: closed.map((row) => ({ timestamp: row.createdAt, pnlUsd: row.pnlUsd }))
+  };
 }

@@ -59,7 +59,7 @@ export default async function MarketDetailPage({
 
       <div className="grid-3">
         <div className="panel stack">
-          <h3>Contract Snapshot</h3>
+          <h3>Market Snapshot</h3>
           <div className="row">
             <span>YES</span>
             <strong>{market.yesPrice.toFixed(1)}%</strong>

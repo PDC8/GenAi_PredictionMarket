@@ -13,6 +13,8 @@ import {
 } from "@/lib/db/repository";
 import { initializeDatabase } from "@/lib/db/init";
 
+const MIN_MARKET_VOLUME_USD = 1000;
+
 async function runSafe(label: string, job: () => Promise<void>): Promise<void> {
   try {
     await job();
@@ -22,14 +24,14 @@ async function runSafe(label: string, job: () => Promise<void>): Promise<void> {
 }
 
 async function syncTask(): Promise<void> {
-  const result = await syncMarketsFromKalshi(50);
+  const result = await syncMarketsFromKalshi(200);
   console.log(`[worker:sync] source=${result.source} synced=${result.synced}`);
 }
 
 async function predictionTask(): Promise<void> {
   const [agents, openMarkets] = await Promise.all([
     listAgents(),
-    listMarketCards({ status: "open", limit: 8 })
+    listMarketCards({ status: "open", limit: 60, minVolume: MIN_MARKET_VOLUME_USD })
   ]);
 
   const agent = agents[0];
@@ -37,7 +39,9 @@ async function predictionTask(): Promise<void> {
     return;
   }
 
-  for (const market of openMarkets.slice(0, 4)) {
+  const candidateMarkets = openMarkets;
+
+  for (const market of candidateMarkets.slice(0, 4)) {
     const latestRun = await getLatestPredictionRunForMarket(market.id);
     const isStale = !latestRun || Date.now() - latestRun.createdAt > 1000 * 60 * 30;
 

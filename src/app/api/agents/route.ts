@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { createAgent, deleteAgentById, listAgents, updateAgentById } from "@/lib/db/repository";
+import {
+  createAgent,
+  deleteAgentById,
+  getAgentRuntimeSummary,
+  listAgents,
+  setAgentManualStatus,
+  updateAgentById
+} from "@/lib/db/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +25,11 @@ const UpdateAgentSchema = CreateAgentSchema.extend({
 
 const DeleteAgentSchema = z.object({
   agentId: z.string().min(1)
+});
+
+const UpdateStatusSchema = z.object({
+  agentId: z.string().min(1),
+  status: z.enum(["LIVE", "PAUSED"])
 });
 
 export async function GET() {
@@ -69,4 +81,23 @@ export async function DELETE(request: Request) {
   }
 
   return NextResponse.json({ deleted: true });
+}
+
+export async function PATCH(request: Request) {
+  const body = await request.json().catch(() => null);
+  const payload = UpdateStatusSchema.safeParse(body);
+  if (!payload.success) {
+    return NextResponse.json({ error: payload.error.issues }, { status: 400 });
+  }
+
+  const result = await setAgentManualStatus({
+    agentId: payload.data.agentId,
+    manualStatus: payload.data.status === "PAUSED" ? "paused" : "live"
+  });
+  if (result.status === "not_found") {
+    return NextResponse.json({ error: "Agent not found." }, { status: 404 });
+  }
+
+  const runtime = await getAgentRuntimeSummary(payload.data.agentId);
+  return NextResponse.json({ runtime });
 }

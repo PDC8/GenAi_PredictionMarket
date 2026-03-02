@@ -9,6 +9,12 @@ export const agents = sqliteTable("agents", {
   createdAt: integer("created_at").notNull()
 });
 
+export const agentRuntime = sqliteTable("agent_runtime", {
+  agentId: text("agent_id").primaryKey(),
+  manualStatus: text("manual_status").notNull(),
+  statusUpdatedAt: integer("status_updated_at").notNull()
+});
+
 export const markets = sqliteTable("markets", {
   id: text("id").primaryKey(),
   externalId: text("external_id").notNull().unique(),

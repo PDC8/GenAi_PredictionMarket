@@ -1,6 +1,6 @@
 import { db, sqliteClient } from "./client";
 import { demoAgents, seedMarkets, seedSignals } from "./seed";
-import { agents, markets, signals } from "./schema";
+import { agentRuntime, agents, markets, signals } from "./schema";
 
 let initialized = false;
 let initializing: Promise<void> | null = null;
@@ -14,6 +14,13 @@ function createTables(): void {
       risk_profile TEXT NOT NULL,
       prompt_template TEXT NOT NULL,
       created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_runtime (
+      agent_id TEXT PRIMARY KEY,
+      manual_status TEXT NOT NULL,
+      status_updated_at INTEGER NOT NULL,
+      FOREIGN KEY (agent_id) REFERENCES agents(id)
     );
 
     CREATE TABLE IF NOT EXISTS markets (
@@ -122,6 +129,10 @@ export async function initializeDatabase(): Promise<void> {
     createTables();
 
     await db.insert(agents).values(demoAgents).onConflictDoNothing();
+    await db
+      .insert(agentRuntime)
+      .values(demoAgents.map((agent) => ({ agentId: agent.id, manualStatus: "live", statusUpdatedAt: Date.now() })))
+      .onConflictDoNothing();
     await db.insert(markets).values(seedMarkets).onConflictDoNothing();
     await db.insert(signals).values(seedSignals).onConflictDoNothing();
 

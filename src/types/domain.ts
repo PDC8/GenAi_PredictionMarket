@@ -10,6 +10,16 @@ export interface AgentProfile {
   createdAt: number;
 }
 
+export interface AgentRuntimeSummary {
+  agentId: string;
+  manualStatus: "live" | "paused";
+  status: "LIVE" | "PAUSED" | "PENDING";
+  winRate: number | null;
+  netAlpha: number | null;
+  lastPredictionAt: number | null;
+  predictions30d: number;
+}
+
 export interface Market {
   id: string;
   externalId: string;
@@ -87,13 +97,14 @@ export interface ToolStatus {
 
 export interface MarketCard {
   id: string;
+  externalId: string;
   title: string;
   category: string;
   yesPrice: number;
   noPrice: number;
   volume: number;
   status: MarketStatus;
-  opportunitySignal: number;
+  opportunitySignal: number | null;
   confidence: number | null;
   source: "kalshi" | "seed_fallback";
   updatedAt: number;
